@@ -288,6 +288,10 @@ fun area(shape: Shape): Double = when (shape) {
 > Stable since Kotlin 2.4.20 · JVM 21 and later
 
 <DrawnAnnotation text="typeSwitch" label="The same invokedynamic Java's pattern-matching `switch` uses (JEP 441)" :geometry="{ label: { x: 0.4723, y: 0.8556, width: 0.7000 }, connector: { type: 'quadratic', start: { x: 0.6262, y: 0.7993 }, control: { x: 0.6202, y: 0.8149 }, end: { x: 0.6262, y: 0.8348 } } }"/>
+<SmartCast :line="6" text="shape">
+<SmartCast :line="6" text="shape" occurrence="2">
+<SmartCast :line="7" text="shape">
+<SmartCast :line="7" text="shape" occurrence="2">
 
 ```kotlin
 sealed interface Shape
@@ -299,6 +303,11 @@ fun area(shape: Shape): Double = when (shape) {
   is Square -> shape.side * shape.side
 }
 ```
+
+</SmartCast>
+</SmartCast>
+</SmartCast>
+</SmartCast>
 
 ```bash
 $ javap -c AreaKt | grep invokedynamic

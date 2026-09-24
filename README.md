@@ -17,15 +17,24 @@ npm run dev
 
 ## Booth loop
 
-Autoplay is off in `npm run dev` so the deck stays an authoring tool. Add `?autoplay` to the URL
-to loop it on the booth screen, or `?autoplay=8` for eight seconds per slide; Magic Move steps
-hold for six seconds, the last slide wraps to the first, and a slide can set `autoplay: 15` in
-its frontmatter. The timer lives in `global-top.vue`.
+The built site loops forever: 30 seconds a slide, and the last slide wraps to the first, so the
+booth screen only needs the GitHub Pages URL. Autoplay is off in `npm run dev` so the deck stays
+an authoring tool; add `?autoplay` to the URL to loop it locally, `?autoplay=8` for eight seconds
+per slide, or `?autoplay=off` to pause it on the published site. A slide can set `autoplay: 45`
+in its frontmatter to override its own duration. The timer lives in `global-top.vue`.
 
 ```bash
-npm run build        # static site in dist/, open dist/index.html?autoplay
+npm run build        # static site in dist/, open dist/index.html
 npm run export       # slides-export.pdf for the venue player
 ```
+
+## Publish
+
+Every push to `main` runs `.github/workflows/deploy.yml`: it checks the snippets are up to date,
+compiles them with Gradle, builds the deck with the repository name as base path and hash routing,
+and deploys `dist/` to GitHub Pages. One-time setup in the repository settings: Pages → Build and
+deployment → Source: **GitHub Actions**. The workflow can also be started by hand from the
+Actions tab.
 
 ## Compile the snippets
 
