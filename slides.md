@@ -394,7 +394,7 @@ kotlin-lsp --stdio
 ---
 layout: intro
 class: meet-us-slide
-kodee: wave
+kodee: false
 ---
 
 <div class="lesson-number">KotlinConf 2027</div>
@@ -404,3 +404,8 @@ kodee: wave
 - **21–23 April 2027** · ICE Kraków
 - Ticket prices rise after **16 October 2026**
 - Call for Papers: ask us at the booth
+
+<figure class="qr-card">
+  <img src="/qr-kotlinconf.svg" alt="QR code for kotlinconf.com" />
+  <figcaption>kotlinconf.com</figcaption>
+</figure>

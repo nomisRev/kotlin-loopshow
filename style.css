@@ -274,24 +274,38 @@ html.dark .closing-slide::after { background: radial-gradient(circle, rgb(235 85
   opacity: 0.85;
 }
 
-/* Part 5: QR card beside the code. */
-.slidev-layout > .qr-card {
+/* QR card filling the right half, where Kodee stands on other intro slides.
+   The intro layout nests the slot in a relative .my-auto; release it so the
+   card positions against the whole slide. */
+.slidev-layout .my-auto:has(> .qr-card) { position: static; }
+.slidev-layout .qr-card {
   position: absolute;
-  right: 15rem;
-  bottom: 2.5rem;
+  top: 50%;
+  left: 75%;
   z-index: 2;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.9rem;
   justify-items: center;
-  width: 11rem;
+  width: 30rem;
   margin: 0;
-  padding: 0.8rem 0.8rem 0.6rem;
-  border-radius: 1rem;
-  background: #fff;
-  box-shadow: 0 0.6rem 1.8rem rgb(31 32 35 / 14%);
+  padding: 1.4rem 1.4rem 1.1rem;
+  border: 0.3rem solid transparent;
+  border-radius: 1.6rem;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(135deg, #7f52ff, #c711e1 55%, #e44857) border-box;
+  box-shadow: 0 1.2rem 3rem rgb(127 82 255 / 22%);
+  transform: translate(-50%, -50%);
 }
 .qr-card img { display: block; width: 100%; height: auto; }
-.qr-card figcaption { color: #1f2023; font-size: 0.95rem; font-weight: 700; }
+.qr-card figcaption {
+  background: linear-gradient(90deg, #7f52ff, #c711e1 55%, #e44857);
+  background-clip: text;
+  color: transparent;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
 
 /* Part 6: meet-us bullet slides and the logo wall placeholder. */
 .meet-us-slide ul { max-width: 52rem; }
