@@ -392,20 +392,21 @@ kotlin-lsp --stdio
 <KotlinPlatforms />
 
 ---
-layout: intro
-class: meet-us-slide
 kodee: false
+class: kotlinconf-slide
 ---
 
-<div class="lesson-number">KotlinConf 2027</div>
-
-# KotlinConf 2027 is coming to Kraków
-
-- **21–23 April 2027** · ICE Kraków
-- Ticket prices rise after **16 October 2026**
-- Call for Papers: ask us at the booth
-
-<figure class="qr-card">
-  <img src="/qr-kotlinconf.svg" alt="QR code for kotlinconf.com" />
-  <figcaption>kotlinconf.com</figcaption>
-</figure>
+<div class="video-qr">
+  <figure class="qr-card">
+    <div class="qr-title">
+      <span class="qr-eyebrow">See you at</span>
+      <strong>KotlinConf 2027</strong>
+      <span class="qr-meta">ICE Kraków · 21–23 April</span>
+    </div>
+    <img src="/qr-kotlinconf.svg" alt="QR code for kotlinconf.com" />
+    <figcaption>kotlinconf.com</figcaption>
+  </figure>
+  <SlidevVideo autoplay loop muted>
+    <source src="https://resources.jetbrains.com/storage/products/kotlinconf-2027/video/KotlinConf-2027-krakow.mp4" type="video/mp4" />
+  </SlidevVideo>
+</div>

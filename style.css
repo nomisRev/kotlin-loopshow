@@ -332,3 +332,55 @@ html.dark .closing-slide::after { background: radial-gradient(circle, rgb(235 85
   letter-spacing: -0.02em;
 }
 html.dark .logo-wall li { border-color: rgb(121 84 246 / 34%); background: rgb(121 84 246 / 10%); }
+
+/* KotlinConf slide: video and QR card side by side under a full-width title. */
+.kotlinconf-slide .video-qr {
+  display: flex;
+  gap: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.kotlinconf-slide .video-qr video {
+  flex: 1;
+  min-width: 0;
+  max-height: 100%;
+  aspect-ratio: 16 / 13;
+  border-radius: 1.2rem;
+  object-fit: cover;
+  box-shadow: 0 1.2rem 3rem rgb(0 0 0 / 18%);
+}
+.kotlinconf-slide .qr-card {
+  position: static;
+  flex: none;
+  width: 22rem;
+  transform: none;
+}
+.kotlinconf-slide .qr-title {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: center;
+  text-align: center;
+}
+.kotlinconf-slide .qr-eyebrow {
+  color: #7f52ff;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.kotlinconf-slide .qr-title strong {
+  font-size: 2.3rem;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.kotlinconf-slide .qr-meta {
+  margin-top: 0.4rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7f52ff, #c711e1 55%, #e44857);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
