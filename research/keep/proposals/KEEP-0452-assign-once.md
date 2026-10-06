@@ -1,0 +1,923 @@
+# Assign-Once Properties
+
+* **Type**: Design Proposal
+* **Author**: Mikhail Vorobev
+* **Contributors**: Marat Akhin, Faiz Ilham Muhammad
+* **Discussion**: [KEEP-0452](https://github.com/Kotlin/KEEP/discussions/471)
+* **Status**: Superseded by [KEEP-0455](https://github.com/Kotlin/KEEP/blob/main/proposals/KEEP-0455-lateinit-val.md)
+
+# Abstract
+
+We propose to provide runtime and compile-time support for properties
+with delayed initialization and assign-once (stable) semantics.
+This functionality bridges the gap between `lateinit var` and `val` properties,
+allowing late initialization while keeping benefits of stable properties.
+
+Proposed implementation is based on `AssignOnce` delegate,
+but we outline two possibilities to surface the feature:
+delegate-first approach and language-builtin approach.
+We strongly prefer the delegate-first approach for simplicity and extensibility.
+The language-builtin alternative is included mainly to drive discussion.
+
+# Table of Contents
+
+* [Abstract](#abstract)
+* [Table of Contents](#table-of-contents)
+* [Motivation](#motivation)
+* [Goals](#goals)
+* [Intended Semantics](#intended-semantics)
+* [Design](#design)
+  * [Delegate-First Approach](#delegate-first-approach)
+  * [Language-Builtin Approach](#language-builtin-approach)
+* [Features](#features)
+  * [Thread-Safety](#thread-safety)
+  * [Smartcasts](#smartcasts)
+  * [Annotations](#annotations)
+  * [`isInitialized`](#isinitialized)
+  * [Summary](#summary)
+* [Implementation](#implementation)
+  * [Implementation of `lateinit var`](#implementation-of-lateinit-var)
+  * [Compilation Strategy](#compilation-strategy)
+  * [`AssignOnce` Delegate](#assignonce-delegate)
+* [Migration from `lateinit var`](#migration-from-lateinit-var)
+* [Additional Considerations](#additional-considerations)
+  * [Serialization](#serialization)
+  * [No General Stability Semantics](#no-general-stability-semantics)
+  * [Using `StableValue`](#using-stablevalue)
+
+# Motivation
+
+Currently, the most popular use cases by far for Kotlin `lateinit var` properties are:
+* **Assign Once**: Variable initialized during setup, initialization, or when dependencies become available. The variable is never changed after that.
+  Some examples of these are: Android view binding, test data initialization.
+* **Dependency Injection**: Similar to assign once, but done by libraries or frameworks, often guided with annotations. This use-case also includes mock injection for testing.
+* **Late Initialization**: Variables with delayed initialization, but possibly reassigned multiple times.
+One example of such usage is the builder pattern.
+
+```kotlin
+// Assign Once use-case
+class MyActivity : AppCompatActivity() {
+    lateinit var view: ImageView
+    
+    // `onCreate` is called early in the activity lifecycle
+    override fun onCreate(...) {
+        view = findViewById(R.id.image)
+        // view is never reassigned after this
+    }
+}
+
+// Dependency Injection use-case
+class MyApplication {
+    // `service` is injected on the application creation
+    @Inject lateinit var service: Service
+    
+    fun doStuff() {
+        // `service` is guaranteed to be initialized at this point
+        service.someMethod()
+    }
+}
+
+// Late Initialization use-case
+class MyRequestBuilder {
+    lateinit var headers: Headers
+    
+    fun build(): Request {
+        // `headers` are expected to be initialized externally
+        // before calling `build` (they can be reassigned multiple times)
+        require(::headers.isInitialized) { 
+            "Headers are not initialized" 
+        }
+        return Request(headers = headers)
+    }
+}
+```
+
+The first two use cases are the most common ones,
+accounting for up to 80% of `lateinit var` usage 
+according to our open-source code survey.
+They are also similar in the semantics: 
+the property is stable after the first assignment.
+
+But `lateinit var` declaration does not correspond well to this assign-once semantics:
+* It allows accidental reassignment of the property, which can lead to bugs.
+* Smartcasts are unsupported for `lateinit var` even if value is actually stable after initialization.
+
+Due to the compilation scheme, `lateinit var` is also limited to non-nullable reference types only.
+
+# Goals
+
+This proposal aims to introduce first-class support for assign-once properties in Kotlin:
+* Express assign-once semantics directly in code, rather than relying on convention.
+* Offer runtime support to prevent accidental semantic violations.
+* Enable smartcasts for assign-once properties, similarly to stable `val` properties.
+
+In addition, the following secondary goals were not hard requirements,
+but they guided the design and implementation choices:
+* Assign-once properties should be type-agnostic, including support for nullable types.
+* Annotation usage should remain ergonomic for assign-once properties,
+  especially for DI-related annotations like `@Inject`. 
+  See [Features/Annotations](#annotations) for discussion.
+* Thread-safe runtime semantics should be available for assign-once properties.
+  Whether it should be the default or not is discussed in [Features/Thread-Safety](#thread-safety).
+
+# Intended Semantics
+
+Based on the motivational examples above, 
+we define the semantics for assign-once properties as follows:
+* An assign-once property is declared without an initializer
+and starts in a special uninitialized state.
+  * There are no restrictions on the type of the property.
+    In particular, nullable types are allowed.
+* An assign-once property can be assigned after declaration:
+  * If it is in the uninitialized state, it is initialized with the given value.
+  * Otherwise, an exception is thrown indicating an attempt to reassign the property.
+* An assign-once property can be read:
+  * If it is in the uninitialized state, an exception is thrown 
+    indicating an attempt to read the uninitialized property.
+  * Otherwise, the previously assigned value is returned.
+
+Note that this specification implies the following:
+* Adherence to assign-once semantics is enforced at runtime
+  by throwing an exception in case of an uninitialized read or a reassignment.
+* There is no requirement for the compiler to ensure at compile time that
+  an assign-once property is initialized before the first read and never reassigned.
+* Building logic around the initialization status of an assign-once property is discouraged
+  as assign-once properties may not expose an API for 
+  initialization status check or set-if-uninitialized assignment.
+
+This matches the intended use-cases for assign-once properties,
+where we expect accidental violations of assign-once semantics to be rare,
+so runtime bug-catching checks are enough to prevent them.
+In addition, if a problem requires logic around the initialization status of a variable,
+we recommend using a `var` or `lateinit var` instead of an assign-once property.
+
+A thread-safe implementation of properties with assign-once semantics 
+should also provide the following guarantees:
+* For any number of potentially concurrent assignments,
+  exactly one of them succeeds, and all others throw an exception.
+* All reads that happen after a successful assignment
+  see the same previously assigned value.
+
+Whether assign-once properties should be thread-safe by default
+is discussed in the [Thread-Safety](#thread-safety) section.
+
+Below we outline two approaches to bring properties with assign-once semantics to Kotlin.
+
+# Design
+
+In this section we describe two possible ways to introduce assign-once properties in Kotlin:
+* **Delegate-first approach**: expose `AssignOnce` delegate directly and define assign-once properties by delegation.
+* **Language-builtin approach**: introduce a new property modifier to the language for assign-once properties.
+
+They could technically coexist in the language. 
+However, doing so would introduce two ways to express the same semantics,
+increasing the cognitive load for users, complicating documentation, 
+and imposing maintenance burden on the compiler, IDE, and tooling.
+Our current preference is the delegate-first approach.
+The language-builtin option is presented as a comparison point.
+
+Regardless of the chosen approach, we propose assign-once properties
+to be implemented as properties delegated to `AssignOnce` delegate.
+For the reasoning behind this choice, see the [Compilation Strategy](#compilation-strategy) section below.
+
+## Delegate-First Approach
+
+We can add `AssignOnce` delegate to the Kotlin standard library,
+providing a builder function similar to `lazy`:
+
+```kotlin
+fun <T> assignOnce(
+    mode: AssignOnceThreadSafetyMode = AssignOnceThreadSafetyMode.SAFE
+): AssignOnce<T> = when (mode) {
+    AssignOnceThreadSafetyMode.SAFE -> ThreadSafeAssignOnce()
+    AssignOnceThreadSafetyMode.NONE -> UnsafeAssignOnce()
+}
+```
+
+This way, an assign-once property definition is a delegation:
+
+```kotlin
+class Example {
+    var property: String by assignOnce()
+
+    fun setup() {
+        property = "Initialized"
+        // ...
+        // throws IllegalStateException
+        property = "Reassignment" 
+    }
+}
+```
+
+Delegation allows customization of desired semantics
+through builder function parameters and does not
+require changes of the syntax. 
+
+On the other hand: 
+* The intent of assign-once semantics
+  is a bit more obfuscated compared to a dedicated language construct.
+* If we are to enable smartcasts for assign-once properties,
+  the `AssignOnce` delegate would become a special case in the compiler.
+  See the [Smartcasts](#smartcasts) section below for details.
+
+## Language-Builtin Approach
+
+We could surface assign-once properties in the language directly.
+There are at least two ways to do so:
+* Extend `lateinit` modifier to `val`s.
+This approach expands the existing notion of `lateinit`.
+However, `lateinit val`s would become `val`s that can be assigned after the declaration,
+which is conceptually confusing as `val`s are expected to be immutable.
+* Add a new `assignonce` modifier for `var`s.
+It avoids confusion of mutable `lateinit val`s and 
+expresses the intent of assign-once semantics more clearly.
+However, this approach requires an introduction of a new soft keyword.
+
+```kotlin
+class Example {
+    assignonce var property: String
+    // alternative syntax:
+    lateinit val property: String
+
+    fun setup() {
+        property = "Initialized"
+        // ...
+        // throws IllegalStateException
+        property = "Reassignment" 
+    }
+}
+```
+
+We would like to hear from the community on which syntax is more natural.
+
+Note that we propose to translate the syntax extension to delegation under the hood,
+similar to the delegate-first approach:
+
+```kotlin
+class Example {
+    var property: String by AssignOnce()
+}
+```
+
+See the [Compilation Strategy](#compilation-strategy) section below for the reasoning behind this choice.
+
+With the new syntax, a declaration clearly expresses the intent of assign-once semantics. 
+However, it comes with the following downsides:
+* Customization of the semantics, e.g., thread-safety mode,
+is not possible without additional syntax.
+* Compilation strategy is more complex than
+for other non-delegated properties, especially `lateinit var`s,
+which may lead to confusion.
+Particularly, interaction with annotations becomes complicated,
+as `lateinit val` (or `assignonce var`) does not create a backing field.
+See the [Annotations](#annotations) section below for details.
+
+# Features
+
+In this section we discuss the interaction of assign-once properties with other Kotlin features. 
+Along the way, we compare both design approaches outlined above.
+
+## Thread-Safety
+
+A data-race condition consists of two or more concurrent operations on a property
+where at least one of them is a write operation.
+A thread-safe implementation of assign-once properties should
+maintain correct semantics under data-race conditions.
+
+```kotlin
+class Example {
+    var property: Int by assignOnce()
+}
+
+suspend fun setup() {
+    val e = Example()
+    coroutineScope {
+        // Exactly one assignment should succeed,
+        // the other should throw an exception.
+        launch { runCatching { e.property = 1 } }
+        launch { runCatching { e.property = 2 } }
+        // Reads either fail or observe the same value.
+        // Cases "1 2" and "2 1" are impossible.
+        launch { runCatching { println(e.property) } }
+        launch { runCatching { println(e.property) } }
+    }
+}
+```
+
+We discuss whether assign-once properties should be thread-safe by default.
+As they are implemented through delegation,
+it makes sense to compare them to other delegates provided by the standard library.
+
+Currently, `Lazy` is the only delegate in the standard library
+that has implementations with different thread-safety modes
+and provides synchronization by default.
+Other delegates, e.g. `Delegates.vetoable`, are not thread-safe.
+
+On the one hand, a possibility of a data-race for an assign-once property
+is represented in the source code the same way
+as for a `Delegates.vetoable` or `var` property:
+a write operation concurrent with another operation.
+So we could refrain from synchronizing assign-once properties,
+requiring users to ensure safety in a multithreaded environment,
+similar to `var` declarations.
+
+In contrast, if we take the non-synchronized `Lazy` implementation,
+code that does not contain a data-race for the lazy property might cause it elsewhere.
+In particular, two concurrent reads of a lazy property could trigger 
+concurrent initialization and lead to a data-race on another property:
+
+```kotlin
+class WithLazy {
+    var counter = 0
+    val cntValue by lazy(LazyThreadSafetyMode.NONE) {
+        counter++
+    }
+}
+
+suspend fun test() {
+    val w = WithLazy()
+    coroutineScope {
+        launch {
+            // First read triggers initialization
+            val touch = w.cntValue 
+        }
+        // Second read triggers concurrent initialization
+        val touch = w.cntValue
+    }
+  
+    // Might fail!
+    require(w.counter == 1)
+}
+```
+
+This unintuitive behavior is an argument for
+making `Lazy` delegate synchronized by default,
+but it does not apply to assign-once properties.
+
+On the other hand, thread-safe `AssignOnce` delegate is safer to use 
+and can be implemented efficiently with compare-and-set primitives.
+Property getter can be further optimized with optimistic read of the 
+underlying `_value` field without synchronization,
+similar to current thread-safe JVM implementation of `Lazy`.
+
+Also, intended use-cases for assign-once properties
+involve just one assignment, during setup or initialization.
+Thus, with optimistic reads, the overhead of synchronization
+would be negligible in practice.
+
+With the above considerations in mind, we propose to make
+assign-once properties thread-safe by default,
+independent of the design approach.
+
+Speaking of the design, the delegate-first approach is more flexible
+in this regard, as it allows choosing the desired synchronization mode 
+through parameters of the builder function.
+With the language-builtin approach, we would have to invent additional syntax
+if we are to allow customization.
+
+## Smartcasts
+
+Assign-once properties do not change after initialization.
+They are similar to `val` and lazy properties since
+every successful read returns the same value.
+We call this behavior stability and such properties stable.
+
+We propose to enable smartcasts for assign-once properties,
+so they benefit from the same safety and convenience as `val` properties:
+
+```kotlin
+class Example {
+    var property: CharSequence by assignOnce()
+
+    fun setup() {
+        property = "Initialized"
+    }
+    
+    fun method() {
+        if (property is String) {
+            // smartcast to String
+            println(property.length)
+        }
+    }
+}
+```
+
+In the delegate-first approach, assign-once properties
+would become an exception among other delegated properties,
+for which smartcasts are not supported.
+On the other hand, a special keyword for declaring assign-once properties
+in the language-builtin approach aligns better with this dedicated support:
+
+```kotlin
+class Example {
+    // assignonce properties can be smart-cast
+    assignonce var property: String
+
+    fun setup() {
+        property = "Initialized"
+    }
+    
+    fun method() {
+        if (property is String) {
+            // smartcast to String
+            println(property.length)
+        }
+    }
+}
+```
+
+Regardless of the chosen design, 
+such smartcasts require the compiler to handle assign-once properties as
+special stable delegated properties.
+In particular, if the delegate of a property implements the `AssignOnce` interface,
+the compiler should assume that the property is stable.
+Note that in the delegate-first approach,
+if the information about stability is tied 
+to the builder function instead of the delegate type,
+it would create complications with writing wrappers around `assignOnce`:
+
+```kotlin
+fun <T> myWrapper(): AssignOnce<T> {
+    // Example: determine thread-safety mode
+    val mode: AssignOnceThreadSafetyMode = TODO()
+    return assignOnce(mode)
+}
+
+class Example {
+    // Is this property stable?
+    var property: String by myWrapper()
+}
+```
+
+As delegates implementing `AssignOnce` interface are considered stable by convention,
+allowing users to extend it freely might be dangerous.
+This is the problem with enabling smartcasts for `Lazy` delegates in a similar way,
+as users can technically define their own `Lazy` delegates that are not stable.
+We see two possible solutions for `AssignOnce`:
+* Make it sealed, thus prohibiting custom implementations altogether.
+* Mark it with `@SubclassOptInRequired` [annotation](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin/-subclass-opt-in-required/),
+  forcing opt-in to extend and thus requiring carefulness from users.
+
+We also refrain from introducing general support for stable property delegates at this point.
+For more details, see the [No General Stability Semantics](#no-general-stability-semantics) section.
+
+## Annotations
+
+One of the most common use-cases for `lateinit var` properties
+and one of intended use-cases for assign-once properties is dependency injection.
+A considerable number of DI frameworks used in Kotlin come from the Java ecosystem 
+and do not provide Kotlin-specific integration.
+They often rely on annotations, e.g. `@Inject`, to mark properties for injection.
+
+As assign-once properties are implemented with delegation,
+they do not expose a backing field for injection frameworks to target.
+Luckily, most DI frameworks support injection through methods as well,
+so they could inject through the generated setter of the property.
+
+However, because of the current defaulting rule for annotation application,
+one cannot apply annotations to a delegated property without specifying a use-site target explicitly.
+The `@set:` target must be used to apply annotation to the setter:
+
+```kotlin
+class Application {
+    @set:Inject var service: Service by assignOnce()
+
+    // error: no applicable target for Inject
+    // @Inject var service: Service by assignOnce()
+}
+```
+
+From this perspective, the delegate-first approach is more consistent 
+as assign-once properties interact with annotations
+in the same way as other delegated properties do.
+With the language-builtin approach, assign-once properties might 
+create an expectation that they have backing fields, 
+and annotations can be applied to them similarly to `lateinit var`s, 
+but this is not the case:
+
+```kotlin
+class Application {
+    // error: no applicable target for Inject
+    // @Inject assignonce var service: Service
+
+    // correct usage:
+    @set:Inject assignonce var service: Service
+}
+```
+
+One could alter the defaulting rule for annotations 
+in the case of `assignonce var`s to hide this complexity,
+for example, by applying annotations to the setter by default.
+That would make DI annotations like `@Inject` appear to work
+as if they were applied to the field:
+
+```kotlin
+class Application {
+    // `@Inject` is applied to the setter 
+    // with an altered defaulting rule
+    @Inject assignonce var service: Service
+}
+```
+
+However, this quickly becomes inconsistent as not all annotations make sense on a setter.
+For instance, `@Transient` is typically meant for the stored state.
+With an assign-once property the only reasonable target is `@delegate:`:
+
+```kotlin
+class Model {
+    // error: `@Transient` cannot be applied to setter
+    // @Transient assignonce var field: String
+    
+    // correct usage:
+    @delegate:Transient assignonce var field: String
+}
+```
+
+So modification of the defaulting rule would fix just one class of annotations.
+It would also make annotation placement depend on a property modifier in an unobvious way.
+For that reason, we do not propose changing the defaulting rule for annotations. 
+Instead, we propose an IDE intention that suggests adding `@set:`
+automatically for known DI annotations when used on assign-once properties,
+regardless of whether the feature is exposed via delegation or built-in syntax.
+
+## `isInitialized`
+
+Kotlin `lateinit var` properties have a built-in `isInitialized` 
+check which tells if the property has been initialized.
+This check is implemented as a combination of a special case for property 
+reflection in the compiler and an intrinsic.
+
+The necessity of supporting an analogous check for assign-once properties is debatable,
+as they are intended to be initialized explicitly no more than once. 
+If special logic around initialization status becomes unavoidable,
+it is a sign that plain nullable `var` might be of better use.
+
+If we decide to support such a check,
+it is straightforward to do so with the delegate-first approach
+assuming that the delegate access feature ([KEEP-0450](https://github.com/Kotlin/KEEP/blob/main/proposals/KEEP-0450-typed-delegate-access.md)) is introduced in Kotlin:
+
+```kotlin
+class AssignOnce<T> {
+    // ...
+    val isInitialized: Boolean
+        get() = _value !== UNINITIALIZED_VALUE
+}
+
+fun <T> assignOnce(...): AssignOnce<T> = ...
+
+fun KDelegatedProperty<AssignOnce<*>, *>.isInitialized(): Boolean {
+    // this.delegate: AssignOnce<*>
+    return this.delegate.isInitialized
+}
+
+class Example {
+    var property: String by assignOnce()
+
+    fun isPropertyInitialized(): Boolean {
+        return ::property.isInitialized()
+    }
+}
+```
+
+With language-builtin approach, to implement `isInitialized` check,
+we would have to treat assign-once properties specially by either:
+* Expose them as delegated properties in reflection API
+and use the same code as above.
+* Introduce an intrinsic similar to that for `lateinit var`s:
+
+```kotlin
+// Currently in the stdlib:
+public inline val @receiver:AccessibleLateinitPropertyLiteral KProperty0<*>.isInitialized: Boolean
+    get() = throw NotImplementedError("Implementation is intrinsic")
+
+// Proposed addition:
+public inline val @receiver:AccessibleAssignOncePropertyLiteral KProperty0<*>.isInitialized: Boolean
+    // Generated code is something like:
+    // return (this.getDelegate() as AssignOnce<*>).isInitialized
+    get() = throw NotImplementedError("Implementation is intrinsic")
+```
+
+## Summary
+
+Below is a brief comparison of the two design approaches
+in terms of assign-once properties features.
+
+| Feature         | Delegate-Based Assign-Once Properties                                                                | Language Built-In Assign-Once Properties                                           |
+|-----------------|------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| Thread-Safety   | ✅ Customizable with a builder function parameter                                                     | ❌ New syntax is necessary if customization is desired                              |
+| Annotations     | ⚠️ Use-site target is required which is expected for a delegated property                            | ❌ Use-site target is required which is confusing compared to `lateinit var`        |
+| Smartcasts      | ⚠️ Could be supported, but would make assign-once properties an exception among delegated properties | ✅ Could be supported                                                               |
+| `isInitialized` | ⚠️ Implementation requires delegate-access or intrinsic                                              | ⚠️ Implementation requires intrinsic or reflection API support and delegate access |
+
+In short, the delegate-based approach provides a smoother user experience overall
+in terms of the most important features: thread-safety, annotations, and smartcasts.
+
+# Implementation
+
+In this section we briefly discuss the implementation of assign-once properties,
+focusing mainly on the reasoning behind the delegation-based compilation scheme.
+
+## Implementation of `lateinit var`
+
+We believe it is beneficial to bring implementation of `lateinit var` and the reasoning behind it 
+into context to make comparison while discussing the implementation of assign-once properties.
+A `lateinit var` is compiled into a public backing field of a nullable type:
+
+```kotlin
+class Example {
+  lateinit var property: String
+  // Generated code:
+  // Note that the backing field is public by default
+  var property: String? = null
+  // Note that the argument is non-nullable
+  fun setProperty(value: String) { property = value }
+  fun getProperty(): String = property ?: throw ...
+}
+```
+
+The reason why nullable types are not allowed for `lateinit var`s is that
+`null` is used as a special marker for uninitialized state.
+This approach was chosen to support dependency injection into the field.
+If some other special object was used instead of `null`, 
+the type of the backing field would have to be changed to `Any?`.
+This would break dependency injection, because frameworks decide
+what to inject based on the type of the field:
+
+```kotlin
+class Example {
+  @Inject lateinit var service: Service?
+  // Generated code:
+  // error: don't know how to inject `Any?`
+  @Inject var property: Any? = UNINITIALIZED_VALUE
+  fun setProperty(value: Service?) { property = value }
+  fun getProperty(): Service? {
+      if (property === UNINITIALIZED_VALUE) throw ...
+      return property as Service?
+  }
+}
+```
+
+Another downside of this scheme is that the backing field is public,
+probably because some frameworks did not support private fields
+at the moment of introduction of `lateinit var`.
+It allows Java code to access the field directly and set it to `null`.
+Thus, a previously initialized `lateinit var` property could become uninitialized again
+which is not fully consistent with the semantics of `lateinit var` in Kotlin.
+
+It is worth noting that Kotlin allowed `lateinit val` for some time.
+The compilation scheme was similar to the `lateinit var`.
+However, they were prohibited starting from Kotlin 1.0,
+mainly because of the possibility to break the semantics from Java
+in a way similar to the one described above for `lateinit var`.
+
+See [Migration from `lateinit var`](#migration-from-lateinit-var) for the discussion
+on why we do not propose deprecation of `lateinit var`s in this KEEP.
+
+## Compilation Strategy
+
+If we adopt the language-builtin design for assign-once properties,
+compiling them as delegated properties is a non-obvious choice.
+Naturally, one could consider compilation schemes similar to `lateinit var`.
+Implementing assign-once properties with a backing field
+might be simpler and more performant,
+saving an allocation compared to the delegation approach.
+
+In this case, the backing field should be private
+so that it could not be modified externally,
+potentially breaking the assign-once semantics contract.
+Generated getter and setter would enforce the contract.
+
+We could choose how to represent the uninitialized state
+of the property:
+* Use `null` as uninitialized marker.
+  Then assign-once properties would be limited to non-nullable types only,
+  just like `lateinit var`s.
+  But dependency injection annotations can be used in this case
+  without an explicit use-site target
+  as DI frameworks now commonly support injection to private fields.
+* Use a special marker object.
+  This way, nullable types are supported.
+  But the type of the backing field becomes `Any?`,
+  which makes injection possible only through the setter,
+  meaning that an explicit `@set:` target is required for DI annotations.
+
+```kotlin
+class Example {
+    assignonce var property: String
+    // null-based compilation scheme:
+    private var property: String? = null
+    fun setProperty(value: String) { ... }
+    fun getProperty(): String { ... }
+    // marker-based compilation scheme:
+    private var property: Any? = UNINITIALIZED_VALUE
+    fun setProperty(value: String) { ... }
+    fun getProperty(): String { ... }
+
+    // both schemes support injection through the setter:
+    @set:Inject assignonce var service: Service
+    // only null-based scheme supports injection to the field:
+    @Inject assignonce var service: Service
+}
+```
+
+Also, if we are to provide thread-safety by default for assign-once properties,
+this compilation scheme becomes more complex
+as we need to introduce additional fields for synchronization primitives.
+
+We believe that compilation to delegated properties is simpler overall,
+while it provides a consistent experience by allowing nullable types.
+It also corresponds to the delegate-first design for assign-once properties,
+which is more flexible as it allows choosing the desired synchronization mode.
+
+```kotlin
+class Example {
+    // Language-builtin approach:
+    assignonce var property: String? // Note that nullable types are supported.
+    // Generated code is equivalent to:
+    var property: String? by AssignOnce()
+  
+    // Delegate-first approach:
+    var property: String? by assignOnce(
+      // Note that customization is possible through parameters of the builder function.
+      mode = AssignOnceThreadSafetyMode.NONE
+    )
+}
+```
+
+However, it comes with the following disadvantages:
+* It requires additional allocation for the delegate instance.
+  This is a performance penalty compared to the backing field scheme.
+* It makes annotation usage less convenient.
+  In most cases, an explicit use-site target is required.
+
+## `AssignOnce` Delegate
+
+Desired assign-once semantics of a property can be
+expressed with the following property delegate:
+
+```kotlin
+internal object UNINITIALIZED_VALUE
+
+class AssignOnce<T>(
+    private var _value: Any? = UNINITIALIZED_VALUE
+): ReadWriteProperty<Any?, T> {
+    override fun getValue(thisRef: Any?, property: KProperty<*>): T {
+        if (_value === UNINITIALIZED_VALUE)
+            throw IllegalStateException("Property ${property.name} is not initialized")
+        @Suppress("UNCHECKED_CAST")
+        return _value as T
+    }
+
+    override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) {
+        if (_value !== UNINITIALIZED_VALUE)
+            throw IllegalStateException("Property ${property.name} is already initialized")
+        _value = value
+    }
+}
+```
+
+This code is only a reference implementation, the actual one might differ
+but should provide the same semantics.
+In particular, note that nullable types are supported in contrast to `lateinit var`. 
+Thus `null` can be a valid domain value for the property.
+
+Also, the given implementation is not thread-safe.
+A synchronized version can be implemented through
+compare-and-set operations on the `_value` field.
+
+# Migration from `lateinit var`
+
+It is important to note we **do not** propose deprecation of `lateinit var`s in this KEEP,
+because `lateinit var`s have proper use-cases that assign-once properties do not cover,
+for example, builder pattern.
+Also, a developer might still prefer to use `lateinit var` in some contexts:
+* They make a better trade-off for performance and memory usage
+  compared to assign-once properties,
+  as they do not require additional allocations for delegate instance and synchronization primitives.
+* They can be used with dependency injection frameworks that don't support injection through setters or
+  with serialization frameworks that can't serialize delegated properties,
+  so assign-once properties are not an option.
+
+However, we propose to add a suggestion in IDE that would facilitate 
+the transition from `lateinit var` to assign-once properties 
+in the dependency injection use-case.
+This would also contribute to the discoverability of the feature:
+
+```kotlin
+class Application {
+    @Inject lateinit var service: Service
+    // IDE suggests a rewrite to assignonce var:
+    @set:Inject assignonce var service: Service
+}
+```
+
+# Additional Considerations
+
+In this section we discuss topics that are less immediately relevant 
+to the design of assign-once properties, but are worth mentioning for completeness. 
+
+## Serialization
+
+Support for delegated properties in Kotlin serialization frameworks is limited in general.
+In particular, `kotlinx.serialization` treats delegated properties as transient by default.
+Thus implementing assign-once properties with delegation makes them harder to integrate with serialization.
+In this regard, assign-once properties are inferior to `lateinit var`s which are usually supported.
+
+However, we do not address this issue in this proposal for the following reasons:
+- We expect that in most of the intended use-cases for assign-once properties,
+  they would hold values that are not serializable themselves, 
+  e.g., service implementations or Android views, see [Motivation](#motivation).
+- We consider serialization support for delegated properties to be
+  a separate design problem outside the scope of this KEEP.
+
+If serialization is desired for a property, a developer can do one of the following:
+- Implement a custom serializer to support assign-once properties an object has.
+- Fall back to `lateinit var`s or even a plain nullable `var`.
+
+## No General Stability Semantics
+
+Delegates `Lazy` and `AssignOnce` both provide stable semantics,
+their `getValue` method always returns the same value on successful read.
+There are also examples of user-defined delegates with stable semantics.
+So it is tempting to introduce general support for stable property delegates to Kotlin,
+enabling smartcasts for them.
+Suppose we could add an annotation to mark a delegate
+or its `getValue` method as stable:
+
+```kotlin
+@Target(AnnotationTarget.FUNCTION)
+annotation class Stable
+
+class AssignOnce<T>(
+    private var _value: Any? = UNINITIALIZED_VALUE
+) {
+    fun setValue(...): Unit { ... }
+
+    @Stable
+    fun getValue(...): T { ... }
+}
+
+class Example {
+    var property: CharSequence by assignOnce()
+
+    fun useProperty() {
+        if (property is String) {
+            // smartcast to String
+            val s: String = property
+        }
+    }
+}
+```
+
+This approach has a couple of problems.
+
+First, stability is an invariant of the whole delegate definition, 
+not just of the `getValue` method.
+For example, to deduce that `AssignOnce` is stable,
+we have to ensure that `setValue` does not change the value after the first assignment.
+So verifying the stability of arbitrary user-defined delegates would be hard in practice, 
+and the compiler would have to treat it as a trusted assumption.
+
+This way, a mistake in an implementation of a delegate marked as stable would lead
+to non-local runtime errors for a code which compiles without any warnings.
+Debugging such errors could become highly complex in practice 
+because one would need to understand:
+* That the error points to a read of a delegated property
+which is actually a call to `getValue` method of the delegate.
+* That the delegate is marked as stable, 
+but it actually isn't due to a bug.
+* That the compiler has used the unsound assumption of delegate stability 
+to deduce something about the property, e.g., smartcast it.
+
+Second, a delegated property read calls `getValue` method indirectly, 
+through the generated accessor:
+
+```kotlin
+class Example {
+    var property: String by assignOnce()
+    // roughly translates to
+    private val property$delegate = assignOnce<String>()
+    var property: String
+        get() = property$delegate.getValue(...)
+        set(value: String) = property$delegate.setValue(...)
+}
+```
+
+This means that, strictly speaking, the compiler would have to
+deduce stability of the getter from stability of the delegate's `getValue` method and arguments passed to it.
+This indirection introduces yet another special case the compiler must handle.
+
+So general stable-semantics support for delegated properties would end up 
+relying on special cases and non-verifiable assumptions which could lead to complicated bugs. 
+Because of that, we propose to avoid the complexity of general stable semantics 
+and support smartcasts only for assign-once properties for now.
+
+## Using `StableValue`
+
+[JEP-502](https://openjdk.org/jeps/502) proposed to introduce `StableValue` API,
+which could potentially serve as a compilation target for assign-once properties on JVM.
+However, `StableValue` was removed in JDK 26.
+Its successor, [JEP-526: `LazyConstant`](https://openjdk.org/jeps/526), does not fit the use-case.
+[Project Amber team suggested](https://mail.openjdk.org/pipermail/amber-dev/2025-November/009470.html) 
+that functionality similar to that of `StableValue`
+might be exposed in the future through `VarHandle` API.

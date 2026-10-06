@@ -54,6 +54,49 @@ public class Register {
 
 ---
 
+# A `value class` has no identity
+
+> Design proposal · KEEP-0454
+> 
+> Experimental (phase I) in Kotlin 2.5
+
+<InlineCompilerError text="a === b" message="Identity equality for arguments of types 'Money' and 'Money' is prohibited">
+
+```kotlin no-compile
+value class Money(val amount: Long, val currency: String)
+
+val a = Money(100, "EUR")
+val b = Money(100, "EUR")
+
+a == b
+a === b
+```
+
+</InlineCompilerError>
+
+---
+magic-move
+---
+
+# Valhalla makes it flat
+
+<DrawnAnnotation text="value class Money" occurrence="2" />
+<DrawnAnnotation text="value class Money" />
+
+```kotlin no-compile
+value class Money(val amount: Long, val currency: String)
+
+class Invoice(val total: Money, val tax: Money)
+```
+```java
+value class Money {
+  private final long amount;
+  private final String currency;
+}
+```
+
+---
+
 # A companion extension needs no companion
 
 > Kotlin 2.5.0-Beta1 · `-Xcompanion-blocks-and-extensions`
@@ -382,6 +425,53 @@ kotlin-lsp --stdio
 - **VS Code**: the Kotlin extension by JetBrains, powered by the LSP
 - **Any editor**: Neovim, Zed, Helix, and every other LSP client
 - **Agents**: Claude Code, Codex and friends get diagnostics, navigation and completion
+
+---
+
+# 8.1 million developers write Kotlin
+
+> The State of Kotlin 2026 · JetBrains
+
+<AdoptionChart
+  title="What Kotlin developers build"
+  :stats="[
+    { value: '80%', label: 'run Kotlin in production' },
+    { value: '87%', label: 'are satisfied with the language' },
+    { value: '51%', label: 'have 3+ years of Kotlin' },
+  ]"
+  :bars="[
+    { label: 'Android', value: 63 },
+    { label: 'Backend', value: 53 },
+    { label: 'Multiplatform', value: 31 },
+    { label: 'Desktop', value: 19 },
+    { label: 'iOS', value: 14 },
+    { label: 'Web', value: 7 },
+    { label: 'Wasm', value: 6 },
+  ]"
+/>
+
+---
+
+# The bigger the backend, the likelier it runs Kotlin
+
+> The State of Kotlin 2026 · anonymized JetBrains IDE data
+
+<AdoptionChart
+  title="Organizations with Kotlin in their backend, by number of backend developers"
+  :highlight="3"
+  :stats="[
+    { value: '26%', label: 'of backend orgs run Kotlin, up from 20% in 2023' },
+    { value: '8×', label: 'more likely after a Spring Boot 2 → 3 migration' },
+    { value: '15–20%', label: 'shorter development cycles than Java' },
+  ]"
+  :bars="[
+    { label: '1 developer', value: 16 },
+    { label: '2–5', value: 23 },
+    { label: '6–20', value: 38 },
+    { label: '21–100', value: 67 },
+    { label: '100+', value: 89 },
+  ]"
+/>
 
 ---
 
