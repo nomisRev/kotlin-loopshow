@@ -88,7 +88,7 @@ value class Money(val amount: Long, val currency: String)
 
 class Invoice(val total: Money, val tax: Money)
 ```
-```java
+```java no-compile
 value class Money {
   private final long amount;
   private final String currency;
