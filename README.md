@@ -1,6 +1,6 @@
 # Kotlin at Devoxx Belgium 2026
 
-Kotlin booth showcase for Devoxx BE 2026 (5–9 October, Kinepolis Antwerp): a 19-slide Slidev
+Kotlin booth showcase for Devoxx BE 2026 (5–9 October, Kinepolis Antwerp): a 29-slide Slidev
 loop built on [`slidev-theme-kotlin`](https://www.npmjs.com/package/slidev-theme-kotlin), in the
 same voice as kotlin-fundamentals. Every `kotlin` and `java` fence compiles with Kotlin 2.4.20;
 the topic plan lives in `PLAN.md`, and the full candidate list that the loop was cut from is a
@@ -39,7 +39,7 @@ Actions tab.
 ## Compile the snippets
 
 ```bash
-npm run snippets     # regenerates the snippets of slides.md and extras.md
+npm run snippets     # regenerates the snippets of slides.md
 ./gradlew build      # compiles every Kotlin and Java fence, checks the snippets are up to date
 ```
 
@@ -47,13 +47,7 @@ npm run snippets     # regenerates the snippets of slides.md and extras.md
 
 | Path | Content |
 | --- | --- |
-| `slides.md` | the booth loop, all 19 slides inline |
-| `extras.md`, `lessons/*.md` | every candidate slide from the plan, one file per section |
+| `slides.md` | the booth loop, all 29 slides inline |
 | `components/KotlinPlatforms.vue` | the "Kotlin runs everywhere" diagram |
 | `global-top.vue` | booth autoplay |
 | `research/` | cached Kotlin changelog and last year's Lambda World deck |
-
-## Still to fill in
-
-The KotlinConf slide carries a `<!-- PLACEHOLDER -->` comment: confirm the CFP status and add
-the ticket QR code from DevRel. The extras deck keeps the talks, quiz and logo wall placeholders.

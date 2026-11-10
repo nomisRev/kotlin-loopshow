@@ -13,3 +13,4 @@ build/
 .gradle/
 build/
 .kotlin/
+.env

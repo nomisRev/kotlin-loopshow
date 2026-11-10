@@ -1,7 +1,8 @@
 ---
 theme: kotlin
 transition: view-transition
-layout: default
+layout: intro
+class: section-slide
 canvasWidth: 1440
 aspectRatio: 16/9
 colorSchema: both
@@ -33,9 +34,214 @@ kodee:
 
 <!-- @formatter:off -->
 
+# What's new in Kotlin
+
+---
+
+# `context` supplies a context without a receiver
+
+<DrawnAnnotation text="context(logger: Logger)" label="Requires a `Logger` dependency in the surrounding context"  :geometry="{ label: { x: 0.4498, y: 0.3675, width: 0.4357 }, connector: { type: 'quadratic', start: { x: 0.3251, y: 0.5217 }, control: { x: 0.3559, y: 0.5184 }, end: { x: 0.3674, y: 0.4873 } } }"/>
+<InlineCompilerError text="greet" occurrence="2" message="No context argument for 'logger: Logger' found">
+
+```kotlin
+class Logger(val tag: String) {
+  fun log(message: String) = println("[$tag] $message")
+}
+
+context(logger: Logger)
+fun greet(name: String) = logger.log("hello, $name")
+
+fun main() {
+  greet("Grace")
+}
+```
+
+</InlineCompilerError>
+
+---
+
+# `context` supplies a context without a receiver
+
+```kotlin
+class Logger(val tag: String) {
+  fun log(message: String) = println("[$tag] $message")
+}
+
+context(logger: Logger)
+fun greet(name: String) = logger.log("hello, $name")
+
+fun main() = context(Logger("APP")) {
+  greet("Grace")
+}
+```
+```console
+[APP] hello, Grace
+```
+
+---
+
+# An explicit backing field replaces the underscore
+
+> Stable since Kotlin 2.4.0
+
+<DrawnAnnotation text="List<String>" label="Outside, it is what the declaration says" :geometry="{ label: { x: 0.5461, y: 0.3138, width: 0.4200 }, connector: { type: 'quadratic', start: { x: 0.3453, y: 0.3763 }, control: { x: 0.3761, y: 0.3730 }, end: { x: 0.3876, y: 0.3419 } } }"/>
+<DrawnAnnotation text="field" color="var(--fundamentals-blue)" />
+<DrawnAnnotation text="items.add"  label="One property: the backing field keeps the wider type" color="var(--fundamentals-blue)" :geometry="{ label: { x: 0.4521, y: 0.6122 }, connector: { type: 'quadratic', start: { x: 0.1644, y: 0.5721 }, control: { x: 0.1729, y: 0.6137 }, end: { x: 0.1994, y: 0.6139 } } }"/>
+
+```kotlin
+class Cart {
+  val items: List<String>
+    field = mutableListOf()
+
+  fun add(item: String) {
+    items.add(item)
+  }
+}
+```
+
+<InlineCompilerError :line="2" text="add" message="Unresolved reference `add` on receiver type `List<String>`">
+
+```kotlin
+val cart = Cart()
+cart.items.add("Ticket")
+```
+
+</InlineCompilerError>
+
+---
+
+# Kotlin Smart Casting
+
+<SmartCast text="value" occurrence="3">
+
+```kotlin
+fun intOrNull(): Int? = null
+
+val value: Int? = intOrNull()
+
+val result: Int =
+  if (value != null) value + 1 else -1
+```
+
+</SmartCast>
+
+---
+
+# Nullability is part of the type
+
+> Kotlin reads JSpecify · Spring Framework 7 ships it
+
+<DrawnAnnotation text="@NullMarked" label="JSpecify: everything here is non-null unless said otherwise" :geometry="{ label: { x: 0.4329, y: 0.3321, width: 0.4242 }, connector: { type: 'quadratic', start: { x: 0.1836, y: 0.3311 }, control: { x: 0.2303, y: 0.3345 }, end: { x: 0.2489, y: 0.3196 } } }"/>
+<DrawnAnnotation text="@Nullable String" />
+
+```java
+import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
+
+@NullMarked
+public class Users {
+  public static @Nullable String nickname(String id) { return null; }
+}
+```
+
+<InlineCompilerError :line="4" text="Users.nickname(&quot;ada&quot;)" message="Initializer type mismatch: expected `String`, actual `String?`">
+
+```kotlin
+val shown = Users.nickname("ada") ?: "Ada"
+
+val nick: String =
+  Users.nickname("ada")
+```
+
+</InlineCompilerError>
+
+---
+
+# Kotlin compiles for Java 26
+
+> Kotlin emits Java 26 bytecode · `jvmToolchain(26)`
+
+<DrawnAnnotation text="permits Circle, Square"/>
+
+```java
+public sealed interface Shape permits Circle, Square {}
+record Circle(double radius) implements Shape {}
+record Square(double side) implements Shape {}
+```
+
+
+---
+magic-move
+---
+
+# Kotlin compiles for Java 26
+
+> Kotlin emits Java 26 bytecode · `jvmToolchain(26)`
+
+<DrawnAnnotation text="when (shape)" label="Java's `permits` list makes the Kotlin `when` exhaustive" :geometry="{ label: { x: 0.7313, y: 0.3841, width: 0.4042 } }"/>
+
+```java
+public sealed interface Shape permits Circle, Square {}
+record Circle(double radius) implements Shape {}
+record Square(double side) implements Shape {}
+```
+
+<SmartCast :line="2" text="shape">
+<SmartCast :line="2" text="shape" occurrence="2">
+<SmartCast :line="3" text="shape">
+<SmartCast :line="3" text="shape" occurrence="2">
+<DrawnAnnotation text="shape." :line="3" occurrence="2" label="A record component reads as a property with smart-casting" color="var(--fundamentals-blue)" :geometry="{ label: { x: 0.5515, y: 0.6319 }, connector: { type: 'quadratic', start: { x: 0.4179, y: 0.6125 }, control: { x: 0.4524, y: 0.6400 }, end: { x: 0.4500, y: 0.6857 } } }"/>
+
+```kotlin
+fun area(shape: Shape): Double = when (shape) {
+  is Circle -> Math.PI * shape.radius * shape.radius
+  is Square -> shape.side * shape.side
+}
+```
+
+</SmartCast>
+</SmartCast>
+</SmartCast>
+</SmartCast>
+
+---
+
+# `when` compiles to `invokedynamic`
+
+> JVM 21 and later
+
+<DrawnAnnotation text="typeSwitch" label="The same invokedynamic Java's pattern-matching `switch` uses (JEP 441)" :geometry="{ label: { x: 0.4723, y: 0.8556, width: 0.7000 }, connector: { type: 'quadratic', start: { x: 0.6262, y: 0.7993 }, control: { x: 0.6202, y: 0.8149 }, end: { x: 0.6262, y: 0.8348 } } }"/>
+<SmartCast :line="6" text="shape">
+<SmartCast :line="6" text="shape" occurrence="2">
+<SmartCast :line="7" text="shape">
+<SmartCast :line="7" text="shape" occurrence="2">
+
+```kotlin
+sealed interface Shape
+data class Circle(val radius: Double) : Shape
+data class Square(val side: Double) : Shape
+
+fun area(shape: Shape): Double = when (shape) {
+  is Circle -> Math.PI * shape.radius * shape.radius
+  is Square -> shape.side * shape.side
+}
+```
+
+</SmartCast>
+</SmartCast>
+</SmartCast>
+</SmartCast>
+
+```bash
+$ javap -c AreaKt | grep invokedynamic
+   8: invokedynamic #29,  0  // InvokeDynamic #0:typeSwitch:(Ljava/lang/Object;I)I
+```
+
+---
+
 # A companion block adds members in place
 
-> Kotlin 2.5.0-Beta1 · `-Xcompanion-blocks-and-extensions`
+> Kotlin 2.5.0-Beta1 · `-Xcompanion-blocks`
 
 <DrawnAnnotation text="Money.zero()" :line="2" label="A plain static call from Java\nno `@JvmStatic`, no `.Companion`" :geometry="{ label: { x: 0.5531, y: 0.6360, width: 0.5300 } }"/>
 
@@ -54,10 +260,29 @@ public class Register {
 
 ---
 
+# A companion extension needs no companion
+
+> Kotlin 2.5.0-Beta1 · `-Xcompanion-blocks-and-extensions`
+
+<DrawnAnnotation text="companion fun LocalDate.epoch()" label="`LocalDate` is a Java class,\nit has no Kotlin companion to extend" :geometry="{ label: { x: 0.5852, y: 0.3779 } }"/>
+
+```kotlin
+import java.time.LocalDate
+
+companion fun LocalDate.epoch() = LocalDate.ofEpochDay(0)
+
+println(LocalDate.epoch())
+```
+```console
+1970-01-01
+```
+
+---
+
 # A `value class` has no identity
 
 > Design proposal · KEEP-0454
-> 
+>
 > Experimental (phase I) in Kotlin 2.5
 
 <InlineCompilerError text="a === b" message="Identity equality for arguments of types 'Money' and 'Money' is prohibited">
@@ -93,25 +318,6 @@ value class Money {
   private final long amount;
   private final String currency;
 }
-```
-
----
-
-# A companion extension needs no companion
-
-> Kotlin 2.5.0-Beta1 · `-Xcompanion-blocks-and-extensions`
-
-<DrawnAnnotation text="companion fun LocalDate.epoch()" label="`LocalDate` is a Java class,\nit has no Kotlin companion to extend" :geometry="{ label: { x: 0.5852, y: 0.3779 } }"/>
-
-```kotlin
-import java.time.LocalDate
-
-companion fun LocalDate.epoch() = LocalDate.ofEpochDay(0)
-
-println(LocalDate.epoch())
-```
-```console
-1970-01-01
 ```
 
 ---
@@ -157,6 +363,28 @@ Team(members=[Member(name=Ada, age=36), Member(name=Linus, age=17)])
 
 ---
 
+# A literal needs an `of()`
+
+> Experimental in Kotlin 2.4.0 · `-Xcollection-literals`
+
+<DrawnAnnotation text="captain: Member" label="Team cannot be empty"  :geometry="{ label: { x: 0.4739, y: 0.5165 } }"/>
+<InlineCompilerError :line="8" message="No value passed for parameter `captain`">
+
+```kotlin
+@JvmInline
+value class Team(private val members: List<Member>) {
+  companion object {
+    operator fun of(captain: Member, vararg members: Member) = Team(members.toList())
+  }
+}
+
+val team: Team = []
+```
+
+</InlineCompilerError>
+
+---
+
 # Destructuring matches by name, not position
 
 > Kotlin 2.3.20 · `-Xname-based-destructuring=complete`
@@ -176,60 +404,22 @@ Ada is 36
 
 ---
 
-# `context` supplies a context without a receiver
+# Ignoring a return value is a warning
 
-> Stable since Kotlin 2.4.0
+> Experimental since Kotlin 2.3.0 · `-Xreturn-value-checker=full`
 
-<TypeHint :line="8" context="Logger">
-<DrawnAnnotation text="context(logger: Logger)" label="Requires a `Logger` dependency in the surrounding context"  :geometry="{ label: { x: 0.5789, y: 0.4513 }, connector: { type: 'quadratic', start: { x: 0.3251, y: 0.5217 }, control: { x: 0.3559, y: 0.5184 }, end: { x: 0.3674, y: 0.4873 } } }"/>
-
-```kotlin
-class Logger(val tag: String) {
-  fun log(message: String) = println("[$tag] $message")
-}
-
-context(logger: Logger)
-fun greet(name: String) = logger.log("hello, $name")
-
-fun main() = context(Logger("APP")) {
-  greet("Grace")
-}
-```
-```console
-[APP] hello, Grace
-```
-
-</TypeHint>
-
----
-
-# An explicit backing field replaces the underscore
-
-> Stable since Kotlin 2.4.0
-
-<DrawnAnnotation text="List<String>" label="Outside, it is what the declaration says" :geometry="{ label: { x: 0.5461, y: 0.3138, width: 0.4200 }, connector: { type: 'quadratic', start: { x: 0.3453, y: 0.3763 }, control: { x: 0.3761, y: 0.3730 }, end: { x: 0.3876, y: 0.3419 } } }"/>
-<DrawnAnnotation text="field" color="var(--fundamentals-blue)" />
-<DrawnAnnotation text="items.add"  label="One property: the backing field keeps the wider type" color="var(--fundamentals-blue)" :geometry="{ label: { x: 0.4521, y: 0.6122 }, connector: { type: 'quadratic', start: { x: 0.1644, y: 0.5721 }, control: { x: 0.1729, y: 0.6137 }, end: { x: 0.1994, y: 0.6139 } } }"/>
+<Warning :line="2" text="price.plus(Money(250))" message="Unused return value of 'plus'.">
 
 ```kotlin
-class Cart {
-  val items: List<String>
-    field = mutableListOf()
-
-  fun add(item: String) {
-    items.add(item)
-  }
+class Money(val cents: Int) {
+  fun plus(other: Money): Money = Money(cents + other.cents)
 }
+// Example
+val price = Money(1000)
+price.plus(Money(250))
 ```
 
-<InlineCompilerError :line="2" text="add" message="Unresolved reference `add` on receiver type `List<String>`">
-
-```kotlin
-val cart = Cart()
-cart.items.add("Ticket")
-```
-
-</InlineCompilerError>
+</Warning>
 
 ---
 
@@ -237,7 +427,16 @@ cart.items.add("Ticket")
 
 > Experimental since Kotlin 2.3.0 · `-Xreturn-value-checker=full`
 
-<DrawnAnnotation text="@CheckReturnValue" label="Java's annotation, read as `@MustUseReturnValues`: Error Prone, Spring and jOOQ ship one" :geometry="{ label: { x: 0.5746, y: 0.3168, width: 0.4905 }, connector: { type: 'quadratic', start: { x: 0.2533, y: 0.3329 }, control: { x: 0.3619, y: 0.3528 }, end: { x: 0.3835, y: 0.3303 } } }"/>
+<Warning :line="2" text="price.plus(Money(250))" message="Unused return value of 'plus'.">
+
+```kotlin
+val price = Money(1000)
+price.plus(Money(250))
+```
+
+</Warning>
+
+<DrawnAnnotation text="@CheckReturnValue" label="Java's annotation, read as `@MustUseReturnValues`: Error Prone, Spring and jOOQ ship one" :geometry="{ label: { x: 0.5042, y: 0.4625, width: 0.4905 }, connector: { type: 'quadratic', start: { x: 0.2533, y: 0.3329 }, control: { x: 0.3619, y: 0.3528 }, end: { x: 0.3835, y: 0.3303 } } }"/>
 
 ```java
 import org.jetbrains.annotations.CheckReturnValue;
@@ -250,111 +449,6 @@ public class Money {
 
   public Money plus(Money other) { return new Money(cents + other.cents); }
 }
-```
-
-<Warning :line="2" text="price.plus(Money(250))" message="Unused return value of 'plus'.">
-
-```kotlin
-val price = Money(1000)
-price.plus(Money(250))
-```
-
-</Warning>
-
----
-
-# Nullability is part of the type
-
-> Kotlin reads JSpecify · Spring Framework 7 ships it
-
-<DrawnAnnotation text="@NullMarked" label="JSpecify: everything here is non-null unless said otherwise" :geometry="{ label: { x: 0.5276, y: 0.3008, width: 0.6000 }, connector: { type: 'quadratic', start: { x: 0.1836, y: 0.3311 }, control: { x: 0.2303, y: 0.3345 }, end: { x: 0.2489, y: 0.3196 } } }"/>
-<DrawnAnnotation text="@Nullable String" />
-
-```java
-import org.jspecify.annotations.NullMarked;
-import org.jspecify.annotations.Nullable;
-
-@NullMarked
-public class Users {
-  public static @Nullable String nickname(String id) { return null; }
-}
-```
-
-<InlineCompilerError :line="4" text="Users.nickname(&quot;ada&quot;)" message="Initializer type mismatch: expected `String`, actual `String?`">
-
-```kotlin
-val shown = Users.nickname("ada") ?: "Ada"
-
-val nick: String =
-  Users.nickname("ada")
-```
-
-</InlineCompilerError>
-
----
-
-# Kotlin compiles for Java 26
-
-> Kotlin 2.4.0 emits Java 26 bytecode · `jvmToolchain(26)`
-
-<DrawnAnnotation text="permits Circle, Square"/>
-<DrawnAnnotation text="when (shape)" label="Java's `permits` list makes the Kotlin `when` exhaustive" :geometry="{ label: { x: 0.7313, y: 0.3841, width: 0.4042 } }"/>
-
-```java
-public sealed interface Shape permits Circle, Square {}
-record Circle(double radius) implements Shape {}
-record Square(double side) implements Shape {}
-```
-
-<SmartCast :line="2" text="shape">
-<SmartCast :line="2" text="shape" occurrence="2">
-<SmartCast :line="3" text="shape">
-<SmartCast :line="3" text="shape" occurrence="2">
-<DrawnAnnotation text="shape." :line="3" occurrence="2" label="A record component reads as a property with smart-casting" color="var(--fundamentals-blue)" :geometry="{ label: { x: 0.5764, y: 0.6322 }, connector: { type: 'quadratic', start: { x: 0.4179, y: 0.6125 }, control: { x: 0.4524, y: 0.6400 }, end: { x: 0.4500, y: 0.6857 } } }"/>
-
-```kotlin
-fun area(shape: Shape): Double = when (shape) {
-  is Circle -> Math.PI * shape.radius * shape.radius
-  is Square -> shape.side * shape.side
-}
-```
-
-</SmartCast>
-</SmartCast>
-</SmartCast>
-</SmartCast>
-
----
-
-# `when` compiles to `invokedynamic`
-
-> Stable since Kotlin 2.4.20 · JVM 21 and later
-
-<DrawnAnnotation text="typeSwitch" label="The same invokedynamic Java's pattern-matching `switch` uses (JEP 441)" :geometry="{ label: { x: 0.4723, y: 0.8556, width: 0.7000 }, connector: { type: 'quadratic', start: { x: 0.6262, y: 0.7993 }, control: { x: 0.6202, y: 0.8149 }, end: { x: 0.6262, y: 0.8348 } } }"/>
-<SmartCast :line="6" text="shape">
-<SmartCast :line="6" text="shape" occurrence="2">
-<SmartCast :line="7" text="shape">
-<SmartCast :line="7" text="shape" occurrence="2">
-
-```kotlin
-sealed interface Shape
-data class Circle(val radius: Double) : Shape
-data class Square(val side: Double) : Shape
-
-fun area(shape: Shape): Double = when (shape) {
-  is Circle -> Math.PI * shape.radius * shape.radius
-  is Square -> shape.side * shape.side
-}
-```
-
-</SmartCast>
-</SmartCast>
-</SmartCast>
-</SmartCast>
-
-```bash
-$ javap -c AreaKt | grep invokedynamic
-   8: invokedynamic #29,  0  // InvokeDynamic #0:typeSwitch:(Ljava/lang/Object;I)I
 ```
 
 ---
@@ -386,10 +480,37 @@ println(talk.minutes)
 
 > KEEP-441 · under design
 
-<DrawnAnnotation text="User | FetchError" label="The error is part of the return type" :geometry="{ label: { x: 0.6761, y: 0.4277, width: 0.4540 }, connector: { type: 'quadratic', start: { x: 0.4515, y: 0.4745 }, control: { x: 0.4861, y: 0.4888 }, end: { x: 0.5320, y: 0.4538 } } }"/>
-<DrawnAnnotation text="?.charge" label="Safe calls propagate the error to the right" color="var(--fundamentals-blue)" :geometry="{ label: { x: 0.6545, y: 0.6646, width: 0.4087 }, connector: { type: 'quadratic', start: { x: 0.4092, y: 0.6237 }, control: { x: 0.4174, y: 0.6775 }, end: { x: 0.4522, y: 0.6671 } } }"/>
-<SmartCast :line="10" text="transaction">
-<SmartCast :line="11" text="transaction">
+<DrawnAnnotation text="error" />
+<DrawnAnnotation text="| FetchError" label="The error is part of the return type" :geometry="{ label: { x: 0.5042, y: 0.4740, width: 0.4540 }, connector: { type: 'quadratic', start: { x: 0.4515, y: 0.4745 }, control: { x: 0.4861, y: 0.4888 }, end: { x: 0.5320, y: 0.4538 } } }"/>
+
+```kotlin no-compile
+error object FetchError
+
+fun fetchUser(): User | FetchError = ...
+```
+
+---
+
+# Rich errors are unions, not exceptions
+
+> KEEP-441 · under design
+
+```kotlin no-compile
+error object FetchError
+error class TransactionError(val message: String)
+
+fun fetchUser(): User | FetchError = ...
+
+fun User.charge(amount: Double): TransactionId | TransactionError = ...
+```
+
+---
+
+# Rich errors are unions, not exceptions
+
+> KEEP-441 · under design
+
+<DrawnAnnotation text="|." label="Specialised syntax over _error type_" />
 
 ```kotlin no-compile
 error object FetchError
@@ -398,7 +519,43 @@ error class TransactionError(val message: String)
 fun fetchUser(): User | FetchError = ...
 fun User.charge(amount: Double): TransactionId | TransactionError = ...
 
-val transaction = fetchUser()?.charge(amount = 10.0)
+val transaction = fetchUser()|.charge(amount = 10.0)
+```
+
+---
+
+# Rich errors are unions, not exceptions
+
+> KEEP-441 · under design
+
+<DrawnAnnotation text="| FetchError | TransactionError" label="Errors accumulate" />
+
+```kotlin no-compile
+error object FetchError
+error class TransactionError(val message: String)
+
+fun fetchUser(): User | FetchError = ...
+fun User.charge(amount: Double): TransactionId | TransactionError = ...
+
+val transaction: TransactionId | FetchError | TransactionError =
+  fetchUser()|.charge(amount = 10.0)
+```
+
+---
+
+# Rich errors are unions, not exceptions
+
+> KEEP-441 · under design
+
+```kotlin no-compile
+error object FetchError
+error class TransactionError(val message: String)
+
+fun fetchUser(): User | FetchError = ...
+fun User.charge(amount: Double): TransactionId | TransactionError = ...
+
+val transaction: TransactionId | FetchError | TransactionError =
+  fetchUser()|.charge(amount = 10.0)
 
 when (transaction) {
   is TransactionId -> "Transaction succeeded: $transaction"
@@ -406,9 +563,6 @@ when (transaction) {
   is FetchError -> "Failed to fetch data"
 }
 ```
-
-</SmartCast>
-</SmartCast>
 
 ---
 
